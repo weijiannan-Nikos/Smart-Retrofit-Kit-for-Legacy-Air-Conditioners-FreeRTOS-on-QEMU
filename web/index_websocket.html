@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智能空调远程控制 - WebSocket版</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;background:#f0f2f5;padding:20px}
+.container{max-width:800px;margin:0 auto}
+.card{background:#fff;border-radius:10px;padding:20px;margin-bottom:20px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}
+h1{color:#1890ff;margin-bottom:20px}
+h2{color:#333;margin-bottom:15px;font-size:18px}
+.status-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:15px}
+.status-item{padding:15px;background:#f5f5f5;border-radius:8px}
+.status-label{color:#666;font-size:14px;margin-bottom:5px}
+.status-value{font-size:24px;font-weight:bold;color:#1890ff}
+.controls{display:flex;flex-direction:column;gap:15px}
+.control-group{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+button{padding:10px 20px;background:#1890ff;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:16px}
+button:hover{background:#40a9ff}
+.mode-btn,.fan-btn,.dir-btn{background:#1890ff;transition:all 0.3s}
+.mode-btn.active,.fan-btn.active,.dir-btn.active{background:#52c41a;box-shadow:0 0 15px #52c41a}
+input[type="range"]{flex:1;min-width:200px}
+.temp-display{font-size:20px;font-weight:bold;min-width:50px;text-align:center}
+.connection-status{padding:10px;border-radius:5px;text-align:center;font-weight:bold}
+.connected{background:#52c41a;color:#fff}
+.connecting{background:#1890ff;color:#fff}
+.disconnected{background:#ff4d4f;color:#fff}
+.feedback{margin-top:10px;padding:10px;border-radius:5px;display:none}
+.feedback-success{background:#52c41a;color:#fff}
+.feedback-error{background:#ff4d4f;color:#fff}
+.realtime-indicator{display:inline-block;width:10px;height:10px;background:#52c41a;border-radius:50%;margin-left:10px;animation:pulse 1s infinite}
+@keyframes pulse{0%{opacity:1}50%{opacity:0.5}100%{opacity:1}}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>🌡️ 智能空调远程控制系统 - WebSocket实时版</h1>
+
+<div class="card">
+<div id="status" class="connection-status connecting">正在连接...</div>
+<div id="feedback" class="feedback"></div>
+</div>
+
+<div class="card">
+<h2>📊 实时状态 <span class="realtime-indicator" id="indicator"></span></h2>
+<div class="status-grid">
+<div class="status-item"><div class="status-label">室内温度</div><div class="status-value"><span id="temp">--</span>°C</div></div>
+<div class="status-item"><div class="status-label">室外温度</div><div class="status-value"><span id="forecast">--</span>°C</div></div>
+<div class="status-item"><div class="status-label">室外湿度</div><div class="status-value"><span id="forecast_hum">--</span>%</div></div>
+<div class="status-item"><div class="status-label">AI建议温度</div><div class="status-value"><span id="suggestion">--</span>°C</div></div>
+</div>
+</div>
+
+<div class="card">
+<h2>🎛️ 控制面板</h2>
+<div class="controls">
+<div class="control-group">
+<button onclick="togglePower()">电源 <span id="powerText">开</span></button>
+</div>
+
+<div class="control-group">
+<span>目标温度:</span>
+<input type="range" id="tempSlider" min="16" max="35" value="24" oninput="updateTempDisplay()">
+<div class="temp-display"><span id="targetTemp">24</span>°C</div>
+<button onclick="setTemp()">设置</button>
+</div>
+
+<div class="control-group">
+<span>模式:</span>
+<button id="modeAuto" class="mode-btn active" onclick="setMode('auto')">自动</button>
+<button id="modeCool" class="mode-btn" onclick="setMode('cool')">制冷</button>
+<button id="modeHeat" class="mode-btn" onclick="setMode('heat')">制热</button>
+<button id="modeDry" class="mode-btn" onclick="setMode('dry')">除湿</button>
+<button id="modeFan" class="mode-btn" onclick="setMode('fan')">送风</button>
+</div>
+
+<div class="control-group">
+<span>风速:</span>
+<button id="fan0" class="fan-btn" onclick="setFan(0)">自动</button>
+<button id="fan1" class="fan-btn" onclick="setFan(1)">低速</button>
+<button id="fan2" class="fan-btn active" onclick="setFan(2)">中速</button>
+<button id="fan3" class="fan-btn" onclick="setFan(3)">高速</button>
+</div>
+
+<div class="control-group">
+<span>风向:</span>
+<button id="dirAuto" class="dir-btn active" onclick="setDirection('auto')">自动</button>
+<button id="dirUp" class="dir-btn" onclick="setDirection('up')">向上</button>
+<button id="dirDown" class="dir-btn" onclick="setDirection('down')">向下</button>
+<button id="dirSwing" class="dir-btn" onclick="setDirection('swing')">💨 摆风</button>
+</div>
+
+<button onclick="applyAI()" style="background:#52c41a">应用建议温度</button>
+</div>
+</div>
+
+</div>
+
+<script>
+let ws = null;
+let power = 1;
+let reconnectAttempts = 0;
+const maxReconnectAttempts = 5;
+
+function connectWebSocket() {
+    try {
+        ws = new WebSocket('ws://localhost:8765');
+        
+        ws.onopen = function(event) {
+            console.log('WebSocket connected');
+            document.getElementById('status').textContent = '已连接 (WebSocket)';
+            document.getElementById('status').className = 'connection-status connected';
+            document.getElementById('indicator').style.display = 'inline-block';
+            reconnectAttempts = 0;
+        };
+        
+        ws.onmessage = function(event) {
+            try {
+                const message = JSON.parse(event.data);
+                
+                if (message.type === 'status') {
+                    updateStatusFromData(message.data);
+                } else if (message.type === 'command_response') {
+                    handleCommandResponse(message);
+                }
+            } catch (e) {
+                console.error('Error parsing WebSocket message:', e);
+            }
+        };
+        
+        ws.onclose = function(event) {
+            console.log('WebSocket disconnected');
+            document.getElementById('status').textContent = '连接断开';
+            document.getElementById('status').className = 'connection-status disconnected';
+            document.getElementById('indicator').style.display = 'none';
+            
+            // Try to reconnect
+            if (reconnectAttempts < maxReconnectAttempts) {
+                reconnectAttempts++;
+                setTimeout(() => {
+                    document.getElementById('status').textContent = `重连中... (${reconnectAttempts}/${maxReconnectAttempts})`;
+                    document.getElementById('status').className = 'connection-status connecting';
+                    connectWebSocket();
+                }, 2000);
+            } else {
+                // Fallback to HTTP polling
+                document.getElementById('status').textContent = '使用HTTP模式';
+                document.getElementById('status').className = 'connection-status connecting';
+                startHttpPolling();
+            }
+        };
+        
+        ws.onerror = function(error) {
+            console.error('WebSocket error:', error);
+        };
+        
+    } catch (e) {
+        console.error('Failed to create WebSocket:', e);
+        startHttpPolling();
+    }
+}
+
+function startHttpPolling() {
+    setInterval(() => {
+        fetch('http://localhost:8080/status')
+            .then(r => r.json())
+            .then(data => {
+                updateStatusFromData(data);
+                document.getElementById('status').textContent = '已连接 (HTTP)';
+                document.getElementById('status').className = 'connection-status connected';
+            })
+            .catch(() => {
+                document.getElementById('status').textContent = '连接断开';
+                document.getElementById('status').className = 'connection-status disconnected';
+            });
+    }, 1000);
+}
+
+function updateStatusFromData(data) {
+    if (!data) return;
+    
+    document.getElementById('temp').textContent = data.temp !== undefined ? data.temp.toFixed(1) : '--';
+    document.getElementById('forecast').textContent = data.forecast_temp !== undefined ? data.forecast_temp : '--';
+    document.getElementById('forecast_hum').textContent = data.forecast_hum !== undefined ? data.forecast_hum : '--';
+    document.getElementById('suggestion').textContent = data.suggestion !== undefined ? data.suggestion : '--';
+    document.getElementById('targetTemp').textContent = data.target !== undefined ? data.target : 24;
+    document.getElementById('tempSlider').value = data.target !== undefined ? data.target : 24;
+    
+    // Update mode buttons
+    ['modeAuto','modeCool','modeHeat','modeDry','modeFan'].forEach(id => 
+        document.getElementById(id).classList.remove('active'));
+    const activeMode = 'mode' + data.mode.charAt(0).toUpperCase() + data.mode.slice(1);
+    if (document.getElementById(activeMode)) 
+        document.getElementById(activeMode).classList.add('active');
+    
+    // Update fan buttons
+    ['fan0','fan1','fan2','fan3'].forEach(id => 
+        document.getElementById(id).classList.remove('active'));
+    const activeFan = 'fan' + data.fan;
+    if (document.getElementById(activeFan)) 
+        document.getElementById(activeFan).classList.add('active');
+    
+    // Update direction buttons
+    ['dirAuto','dirUp','dirDown','dirSwing'].forEach(id => 
+        document.getElementById(id).classList.remove('active'));
+    const activeDir = 'dir' + data.direction.charAt(0).toUpperCase() + data.direction.slice(1);
+    if (document.getElementById(activeDir)) 
+        document.getElementById(activeDir).classList.add('active');
+    
+    power = data.power;
+    document.getElementById('powerText').textContent = power ? '开' : '关';
+}
+
+function handleCommandResponse(message) {
+    const feedback = document.getElementById('feedback');
+    if (message.success) {
+        feedback.textContent = `✓ 命令执行成功: ${message.command.cmd}`;
+        feedback.className = 'feedback feedback-success';
+    } else {
+        feedback.textContent = `❌ 命令执行失败: ${message.command.cmd}`;
+        feedback.className = 'feedback feedback-error';
+    }
+    feedback.style.display = 'block';
+    setTimeout(() => feedback.style.display = 'none', 2000);
+}
+
+function sendCommand(cmd, val) {
+    const command = { cmd: cmd, val: val };
+    
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        // Send via WebSocket
+        ws.send(JSON.stringify({
+            type: 'command',
+            data: command
+        }));
+    } else {
+        // Fallback to HTTP
+        fetch('http://localhost:8080/command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(command)
+        }).then(response => {
+            const feedback = document.getElementById('feedback');
+            if (response.ok) {
+                feedback.textContent = `✓ 命令发送成功: ${cmd}`;
+                feedback.className = 'feedback feedback-success';
+            } else {
+                feedback.textContent = `❌ 命令发送失败: ${cmd}`;
+                feedback.className = 'feedback feedback-error';
+            }
+            feedback.style.display = 'block';
+            setTimeout(() => feedback.style.display = 'none', 2000);
+        }).catch(() => {
+            const feedback = document.getElementById('feedback');
+            feedback.textContent = '❌ 网络错误';
+            feedback.className = 'feedback feedback-error';
+            feedback.style.display = 'block';
+            setTimeout(() => feedback.style.display = 'none', 3000);
+        });
+    }
+}
+
+function togglePower() {
+    power = 1 - power;
+    document.getElementById('powerText').textContent = power ? '开' : '关';
+    sendCommand('power', power);
+}
+
+function updateTempDisplay() {
+    document.getElementById('targetTemp').textContent = document.getElementById('tempSlider').value;
+}
+
+function setTemp() {
+    const temp = parseInt(document.getElementById('tempSlider').value);
+    sendCommand('temp', temp);
+}
+
+function setMode(mode) {
+    ['modeAuto','modeCool','modeHeat','modeDry','modeFan'].forEach(id => 
+        document.getElementById(id).classList.remove('active'));
+    const activeId = 'mode' + mode.charAt(0).toUpperCase() + mode.slice(1);
+    document.getElementById(activeId).classList.add('active');
+    sendCommand('mode', mode);
+}
+
+function setFan(speed) {
+    ['fan0','fan1','fan2','fan3'].forEach(id => 
+        document.getElementById(id).classList.remove('active'));
+    document.getElementById('fan' + speed).classList.add('active');
+    sendCommand('fan', speed);
+}
+
+function setDirection(dir) {
+    ['dirAuto','dirUp','dirDown','dirSwing'].forEach(id => 
+        document.getElementById(id).classList.remove('active'));
+    const activeId = 'dir' + dir.charAt(0).toUpperCase() + dir.slice(1);
+    document.getElementById(activeId).classList.add('active');
+    sendCommand('direction', dir);
+}
+
+function applyAI() {
+    sendCommand('apply_ai', null);
+}
+
+// Initialize WebSocket connection
+connectWebSocket();
+</script>
+</body>
+</html>

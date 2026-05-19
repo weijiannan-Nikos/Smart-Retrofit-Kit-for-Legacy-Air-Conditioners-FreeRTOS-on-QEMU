@@ -1,0 +1,17 @@
+{
+    "files.associations": {
+        "bridge_comm.h": "c",
+        "sensor_task.h": "c",
+        "freertos.h": "c",
+        "system_config.h": "c",
+        "queue.h": "c",
+        "task.h": "c",
+        "type_traits": "c",
+        "semphr.h": "c",
+        "control_task.h": "c",
+        "timers.h": "c",
+        "ir_task.h": "c",
+        "wifi_task.h": "c",
+        "bridge_task.h": "c"
+    }
+}

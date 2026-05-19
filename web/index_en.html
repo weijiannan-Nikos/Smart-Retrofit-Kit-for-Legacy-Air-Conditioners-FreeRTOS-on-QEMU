@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart AC Remote Control</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;background:#f0f2f5;padding:20px}
+.container{max-width:800px;margin:0 auto}
+.card{background:#fff;border-radius:10px;padding:20px;margin-bottom:20px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}
+h1{color:#1890ff;margin-bottom:20px}
+h2{color:#333;margin-bottom:15px;font-size:18px}
+.status-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:15px}
+.status-item{padding:15px;background:#f5f5f5;border-radius:8px}
+.status-label{color:#666;font-size:14px;margin-bottom:5px}
+.status-value{font-size:24px;font-weight:bold;color:#1890ff}
+.controls{display:flex;flex-direction:column;gap:15px}
+.control-group{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+button{padding:10px 20px;background:#1890ff;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:16px}
+button:hover{background:#40a9ff}
+.mode-btn,.fan-btn,.dir-btn{background:#1890ff;transition:all 0.3s}
+.mode-btn.active,.fan-btn.active,.dir-btn.active{background:#52c41a;box-shadow:0 0 15px #52c41a}
+input[type="range"]{flex:1;min-width:200px}
+.temp-display{font-size:20px;font-weight:bold;min-width:50px;text-align:center}
+.connection-status{padding:10px;border-radius:5px;text-align:center;font-weight:bold}
+.connected{background:#52c41a;color:#fff}
+.disconnected{background:#ff4d4f;color:#fff}
+.feedback-success{background:#52c41a;color:#fff;text-align:center;font-weight:bold}
+.feedback-queued{background:#1890ff;color:#fff;text-align:center;font-weight:bold}
+.feedback-failed{background:#ff4d4f;color:#fff;text-align:center;font-weight:bold}
+.feedback-timeout{background:#faad14;color:#fff;text-align:center;font-weight:bold}
+.lang-switch{text-align:right;margin-bottom:10px}
+.lang-switch a{color:#1890ff;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="lang-switch"><a href="index_simple.html">中文</a> | <strong>English</strong></div>
+<h1>🌡️ Smart AC Remote Control System</h1>
+<div class="card">
+<div id="status" class="connection-status connected">Connected</div>
+<div id="feedback" style="margin-top:10px;padding:10px;border-radius:5px;display:none"></div>
+</div>
+<div class="card">
+<h2>📊 Real-time Status</h2>
+<div class="status-grid">
+<div class="status-item"><div class="status-label">Indoor Temp</div><div class="status-value"><span id="temp">--</span>°C</div></div>
+<div class="status-item"><div class="status-label">Outdoor Temp</div><div class="status-value"><span id="forecast">--</span>°C</div></div>
+<div class="status-item"><div class="status-label">Outdoor Humidity</div><div class="status-value"><span id="forecast_hum">--</span>%</div></div>
+<div class="status-item"><div class="status-label">AI Suggested Temp</div><div class="status-value"><span id="suggestion">--</span>°C</div></div>
+</div>
+</div>
+<div class="card">
+<h2>🎛️ Control Panel</h2>
+<div class="controls">
+<div class="control-group"><button onclick="togglePower()">Power <span id="powerText">ON</span></button></div>
+<div class="control-group"><span>Target Temp:</span><input type="range" id="tempSlider" min="16" max="35" value="24" oninput="updateTempDisplay()"><div class="temp-display"><span id="targetTemp">24</span>°C</div><button onclick="setTemp()">Set</button></div>
+<div class="control-group"><span>Mode:</span><button id="modeAuto" class="mode-btn active" onclick="setMode('auto')">Auto</button><button id="modeCool" class="mode-btn" onclick="setMode('cool')">Cool</button><button id="modeHeat" class="mode-btn" onclick="setMode('heat')">Heat</button><button id="modeDry" class="mode-btn" onclick="setMode('dry')">Dry</button><button id="modeFan" class="mode-btn" onclick="setMode('fan')">Fan</button></div>
+<div class="control-group"><span>Fan Speed:</span><button id="fan0" class="fan-btn" onclick="setFan(0)">Auto</button><button id="fan1" class="fan-btn" onclick="setFan(1)">Low</button><button id="fan2" class="fan-btn active" onclick="setFan(2)">Med</button><button id="fan3" class="fan-btn" onclick="setFan(3)">High</button></div>
+<div class="control-group"><span>Wind Direction:</span><button id="dirAuto" class="dir-btn active" onclick="setDirection('auto')">Auto</button><button id="dirUp" class="dir-btn" onclick="setDirection('up')">Up</button><button id="dirDown" class="dir-btn" onclick="setDirection('down')">Down</button><button id="dirSwing" class="dir-btn" onclick="setDirection('swing')">💨 Swing</button></div>
+<div class="control-group">
+<button onclick="applyAI()" style="background:#52c41a">Apply Suggested Temp</button>
+<button id="smartConfigBtn" onclick="toggleSmartConfig()" style="background:#722ed1">Smart Config: ON</button>
+</div>
+</div>
+</div>
+<div class="card">
+<h2>⏰ Timer Settings</h2>
+<div class="controls">
+<div class="control-group">
+<span>Auto Off (Countdown):</span>
+<input type="range" id="timerSlider" min="0" max="12" value="0" oninput="updateTimerDisplay()">
+<div class="temp-display"><span id="timerDisplay">OFF</span></div>
+<button onclick="setTimer()">Set</button>
+<button onclick="clearTimer()" style="background:#ff4d4f">Clear</button>
+</div>
+<div class="control-group">
+<span>Schedule Power On:</span>
+<input type="time" id="powerOnTime" value="07:00">
+<button onclick="setScheduleOn()">Set</button>
+<span id="scheduleOnStatus" style="margin-left:10px;color:#52c41a"></span>
+</div>
+<div class="control-group">
+<span>Schedule Power Off:</span>
+<input type="time" id="powerOffTime" value="23:00">
+<button onclick="setScheduleOff()">Set</button>
+<span id="scheduleOffStatus" style="margin-left:10px;color:#52c41a"></span>
+</div>
+<button onclick="clearAllSchedules()" style="background:#ff4d4f">Clear All Schedules</button>
+</div>
+</div>
+</div>
+<script>
+let power=1;
+const modeNames={auto:'Auto',cool:'Cool',heat:'Heat',dry:'Dry',fan:'Fan'};
+const fanNames={0:'Auto',1:'Low',2:'Med',3:'High'};
+const directionNames={auto:'Auto',up:'Up',down:'Down',swing:'Swing'};
+let lastCmdTime=0;
+let pendingCmd='';
+function updateStatus(){
+fetch('http://localhost:8080/status').then(r=>r.json()).then(data=>{
+console.log('Data:', data);
+if(data){
+if(data.temp===0)console.warn('Firmware not running');
+document.getElementById('temp').textContent=data.temp!==undefined?data.temp:'--';
+document.getElementById('forecast').textContent=data.forecast_temp!==undefined?data.forecast_temp:'--';
+document.getElementById('forecast_hum').textContent=data.forecast_hum!==undefined?data.forecast_hum:'--';
+document.getElementById('suggestion').textContent=data.suggestion!==undefined?data.suggestion:'--';
+document.getElementById('targetTemp').textContent=data.target;
+document.getElementById('tempSlider').value=data.target;
+if(data.feedback){
+const fb=data.feedback;
+const fbDiv=document.getElementById('feedback');
+if(fb.status==='queued'){
+fbDiv.textContent='⏳ Command Sent: '+fb.cmd;
+fbDiv.className='feedback-queued';
+fbDiv.style.display='block';
+pendingCmd=fb.cmd;
+lastCmdTime=Date.now();
+}else if(fb.status==='failed'){
+fbDiv.textContent='❌ Command Failed: '+fb.cmd+' ('+fb.reason+')';
+fbDiv.className='feedback-failed';
+fbDiv.style.display='block';
+setTimeout(()=>fbDiv.style.display='none',3000);
+}else if(pendingCmd&&data.last_cmd===pendingCmd){
+if(data.cmd_ack===1){
+fbDiv.textContent='✓ Command Executed: '+pendingCmd;
+fbDiv.className='feedback-success';
+fbDiv.style.display='block';
+setTimeout(()=>fbDiv.style.display='none',3000);
+pendingCmd='';
+}else if(Date.now()-lastCmdTime>5000){
+fbDiv.textContent='⚠ Command Timeout: '+pendingCmd;
+fbDiv.className='feedback-timeout';
+fbDiv.style.display='block';
+setTimeout(()=>fbDiv.style.display='none',3000);
+pendingCmd='';
+}
+}
+}
+['modeAuto','modeCool','modeHeat','modeDry','modeFan'].forEach(id=>document.getElementById(id).classList.remove('active'));
+const activeMode='mode'+data.mode.charAt(0).toUpperCase()+data.mode.slice(1);
+if(document.getElementById(activeMode))document.getElementById(activeMode).classList.add('active');
+['fan0','fan1','fan2','fan3'].forEach(id=>document.getElementById(id).classList.remove('active'));
+const activeFan='fan'+data.fan;
+if(document.getElementById(activeFan))document.getElementById(activeFan).classList.add('active');
+const swingBtn=document.getElementById('swingBtn');
+if(data.swing){swingBtn.classList.add('active');}else{swingBtn.classList.remove('active');}
+['dirAuto','dirUp','dirDown','dirSwing'].forEach(id=>document.getElementById(id).classList.remove('active'));
+const activeDir='dir'+data.direction.charAt(0).toUpperCase()+data.direction.slice(1);
+if(document.getElementById(activeDir))document.getElementById(activeDir).classList.add('active');
+power=data.power;
+document.getElementById('powerText').textContent=power?'ON':'OFF';
+document.getElementById('status').textContent='Connected';
+document.getElementById('status').className='connection-status connected';
+}
+}).catch((err)=>{
+console.error('Error:', err);
+document.getElementById('status').textContent='Disconnected';
+document.getElementById('status').className='connection-status disconnected';
+});
+}
+function sendCommand(cmd,val){
+const fbDiv=document.getElementById('feedback');
+fbDiv.textContent='⏳ Sending: '+cmd;
+fbDiv.className='feedback-queued';
+fbDiv.style.display='block';
+fetch('http://localhost:8080/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd:cmd,val:val})})
+.then(response => {
+if(response.ok) {
+fbDiv.textContent='✓ Command Success: '+cmd;
+fbDiv.className='feedback-success';
+setTimeout(()=>fbDiv.style.display='none',2000);
+} else {
+fbDiv.textContent='❌ Command Failed: '+cmd;
+fbDiv.className='feedback-failed';
+setTimeout(()=>fbDiv.style.display='none',3000);
+}
+})
+.catch(()=>{
+fbDiv.textContent='❌ Network Error';
+fbDiv.className='feedback-failed';
+setTimeout(()=>fbDiv.style.display='none',3000);
+});
+}
+function togglePower(){power=1-power;document.getElementById('powerText').textContent=power?'ON':'OFF';sendCommand('power',power);}
+function updateTempDisplay(){document.getElementById('targetTemp').textContent=document.getElementById('tempSlider').value;}
+function setTemp(){const temp=parseInt(document.getElementById('tempSlider').value);sendCommand('temp',temp);}
+function setMode(mode){['modeAuto','modeCool','modeHeat','modeDry','modeFan'].forEach(id=>document.getElementById(id).classList.remove('active'));const activeId='mode'+mode.charAt(0).toUpperCase()+mode.slice(1);document.getElementById(activeId).classList.add('active');sendCommand('mode',mode);}
+function setFan(speed){['fan0','fan1','fan2','fan3'].forEach(id=>document.getElementById(id).classList.remove('active'));document.getElementById('fan'+speed).classList.add('active');sendCommand('fan',speed);}
+function setDirection(dir){['dirAuto','dirUp','dirDown','dirSwing'].forEach(id=>document.getElementById(id).classList.remove('active'));const activeId='dir'+dir.charAt(0).toUpperCase()+dir.slice(1);document.getElementById(activeId).classList.add('active');sendCommand('direction',dir);}
+let smartConfig = true;
+let commandDebounce = {};
+
+function debounceCommand(cmd, val, delay = 1000) {
+    if (commandDebounce[cmd]) {
+        clearTimeout(commandDebounce[cmd]);
+    }
+    commandDebounce[cmd] = setTimeout(() => {
+        sendCommand(cmd, val);
+        delete commandDebounce[cmd];
+    }, delay);
+}
+
+function toggleSmartConfig() {
+    smartConfig = !smartConfig;
+    document.getElementById('smartConfigBtn').textContent = 'Smart Config: ' + (smartConfig ? 'ON' : 'OFF');
+    sendCommand('smart_config', smartConfig ? 1 : 0);
+}
+
+function applyAI(){sendCommand('apply_ai',null);}
+function updateTimerDisplay(){const h=document.getElementById('timerSlider').value;document.getElementById('timerDisplay').textContent=h==0?'OFF':h+'h';}
+function setTimer(){const hours=parseInt(document.getElementById('timerSlider').value);sendCommand('timer',hours);}
+function clearTimer(){document.getElementById('timerSlider').value='0';updateTimerDisplay();sendCommand('timer',0);}
+function setScheduleOn(){const time=document.getElementById('powerOnTime').value;sendCommand('schedule_on',time);document.getElementById('scheduleOnStatus').textContent='✓ Set: '+time;}
+function setScheduleOff(){const time=document.getElementById('powerOffTime').value;sendCommand('schedule_off',time);document.getElementById('scheduleOffStatus').textContent='✓ Set: '+time;}
+function clearAllSchedules(){sendCommand('clear_schedule',null);document.getElementById('scheduleOnStatus').textContent='';document.getElementById('scheduleOffStatus').textContent='';}
+let updateInterval;
+let isUpdating = false;
+
+function startUpdates() {
+    if (updateInterval) clearInterval(updateInterval);
+    updateInterval = setInterval(() => {
+        if (!isUpdating) {
+            isUpdating = true;
+            updateStatus().finally(() => {
+                isUpdating = false;
+            });
+        }
+    }, 3000); // Update every 3 seconds
+}
+
+function updateStatus() {
+    return fetch('http://localhost:8080/status')
+        .then(r => r.json())
+        .then(data => {
+            if(data) {
+                document.getElementById('temp').textContent = data.temp !== undefined ? data.temp.toFixed(1) : '--';
+                document.getElementById('forecast').textContent = data.forecast_temp !== undefined ? data.forecast_temp : '--';
+                document.getElementById('forecast_hum').textContent = data.forecast_hum !== undefined ? data.forecast_hum : '--';
+                document.getElementById('suggestion').textContent = data.suggestion !== undefined ? data.suggestion : '--';
+                
+                document.getElementById('status').textContent = 'Connected';
+                document.getElementById('status').className = 'connection-status connected';
+            }
+        })
+        .catch(() => {
+            document.getElementById('status').textContent = 'Disconnected';
+            document.getElementById('status').className = 'connection-status disconnected';
+        });
+}
+
+startUpdates();
+</script>
+</body>
+</html>
